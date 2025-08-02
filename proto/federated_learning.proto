@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package federated_learning;
+option go_package = "github.com/drarkayl/fed/proto;proto";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// --- Messages ---
+
+// ModelWeights represents the serialized weights of the neural network.
+// We'll use bytes to send the raw numpy array data.
+// It includes metadata for tracking.
+message ModelWeights {
+  bytes serialized_weights = 1; // Raw bytes of the NumPy array(s)
+  string client_id = 2;         // Unique ID of the client node (e.g., "node-1", "laptop-gemma")
+  int64 round_id = 3;           // The current Federated Learning round ID
+  google.protobuf.Timestamp timestamp = 4; // When these weights were generated/sent
+}
+
+// TrainRequest: Sent from Go orchestrator to local Python ML service
+// to initiate local training.
+message TrainRequest {
+  int32 epochs = 1; // Number of local epochs to train
+  int32 batch_size = 2; // Batch size for local training
+  int64 round_id = 3; // The current Federated Learning round ID
+  // Potentially add more training parameters here
+}
+
+// TrainResponse: Sent from local Python ML service to Go orchestrator
+// after local training. Contains the updated local weights and performance metrics.
+message TrainResponse {
+  ModelWeights weights = 1; // The newly trained local model weights
+  float loss = 2;          // Local training loss
+  float accuracy = 3;      // Local training accuracy
+  AckResponse confirmation = 4; // check Whether the training failed or not
+}
+
+// SetGlobalWeightsRequest: Sent from Go orchestrator to local Python ML service
+// to update its model with the new aggregated global weights.
+message SetGlobalWeightsRequest {
+  ModelWeights global_weights = 1; // The aggregated global model weights
+}
+
+// AckResponse: Generic acknowledgement for various RPCs.
+message AckResponse {
+  bool success = 1;
+  string message = 2; // Optional: detailed message
+}
+
+message ImageData {
+  bytes data = 1; // The raw image bytes
+}
+
+message ClassificationResult {
+  string label = 1; // The classification label (e.g., "Max sleeping", "Bella playing")
+  float confidence = 2; // Optional: Add confidence score for the classification
+}
+
+// --- Services ---
+
+// MLService: Defines the API for the local Python ML component.
+// The Go Orchestrator will be a client to this service.
+service MLService {
+  rpc TrainLocalModel (TrainRequest) returns (TrainResponse);
+  rpc GetModelWeights (google.protobuf.Empty) returns (ModelWeights);
+  rpc SetModelWeights (SetGlobalWeightsRequest) returns (AckResponse);
+  rpc PerformInference (ImageData) returns (ClassificationResult); // Take image bytes, return classification label
+}
+
+// P2PService: Defines the API for inter-node communication between Go Orchestrators.
+// Each Go Orchestrator will be both a client and a server for this service.
+service P2PService {
+  // Sent from the leader Go node to all client Go nodes to signal a new training round.
+  rpc StartTrainingRound (TrainRequest) returns (AckResponse);
+
+  // Sent from a client Go node to the leader Go node to submit local weights.
+  rpc SubmitLocalWeights (ModelWeights) returns (AckResponse);
+
+  // Sent from the leader Go node to all client Go nodes to broadcast the new global model.
+  rpc BroadcastGlobalModel (ModelWeights) returns (AckResponse);
+
+  // Potentially for future consensus implementation:
+  // rpc RequestLeaderStatus (google.protobuf.Empty) returns (LeaderStatus);
+}
+
+// Optional: A message for leader status if we get into more complex consensus later
+/*
+message LeaderStatus {
+  string leader_id = 1;
+  bool is_leader = 2;
+  int64 current_term = 3;
+}
+*/
