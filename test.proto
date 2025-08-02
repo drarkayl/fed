@@ -1,8 +1,0 @@
-syntax = "proto3";
-import "google/protobuf/empty.proto";
-
-option go_package = "example.com/test_proto";
-
-message TestMessage {
-  google.protobuf.Empty my_empty_field = 1;
-}
