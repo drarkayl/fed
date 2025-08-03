@@ -3,6 +3,7 @@ module github.com/drarkayl/fed
 go 1.24
 
 require (
+	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.36.6
 )
