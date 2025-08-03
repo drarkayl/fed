@@ -1,0 +1,6 @@
+grpcio==1.74.0
+grpcio-reflection==1.74.0
+numpy==2.3.2
+pillow==11.3.0
+protobuf==6.31.1
+python-json-logger==3.3.0
