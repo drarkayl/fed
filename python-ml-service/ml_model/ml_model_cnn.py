@@ -13,6 +13,8 @@ from .image_preprocessing import PetDataset, get_data_transforms
 TARGET_IMG_SIZE = (1024, 1360)
 NUM_CLASSES = 2  # foxy and puppy
 DATA_DIR = 'ml_model/data'  # Directory where the data is stored
+TRAIN_DIR = f'{DATA_DIR}/train'
+VAL_DIR = f'{DATA_DIR}/test'
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -42,22 +44,31 @@ def create_model(num_classes):
     Creates the CNN model.
     """
     model = SimpleCNN(num_classes)
+    logger.info("Model created successfully.")
+
     return model
 
+def create_datasets(train_dir, val_dir, img_size):
+    """
+    Creates datasets for training and validation.
+    """
+    data_transforms = get_data_transforms(img_size)
+    # Create datasets for training and validation
+    train_dataset = PetDataset(root_dir=train_dir, transform=data_transforms['train'])
+    val_dataset = PetDataset(root_dir=val_dir, transform=data_transforms['validation'])
+    logger.info(f"The classes are: {train_dataset.class_to_idx}")
+    return train_dataset, val_dataset
 
-def create_dataloaders(train_dir, val_dir, img_size, batch_size):
+def create_dataloaders(train_dataset, val_dataset, batch_size=32):
     """
     Creates DataLoaders for training and validation datasets.
     """
-    data_transforms = get_data_transforms(img_size)
-
-    train_dataset = PetDataset(root_dir=train_dir, transform=data_transforms['train'])
-    val_dataset = PetDataset(root_dir=val_dir, transform=data_transforms['validation'])
-
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     logger.info(f"The classes are: {train_dataset.class_to_idx}")
+    logger.info("Data loaders created successfully.", extra={'batch_size': batch_size})
+
     return train_loader, val_loader
 
 
@@ -103,7 +114,7 @@ def train_model(model, train_loader, val_loader, epochs, device="cpu"):
         epoch_val_acc = corrects.double() / len(val_loader.dataset)
         logger.info(f'Epoch {epoch + 1}/{epochs} Train Loss: {epoch_loss:.4f} Val Loss: {epoch_val_loss:.4f} Val Acc: {epoch_val_acc:.4f}')
 
-    return model
+    return model, epoch_val_acc, epoch_val_loss
 
 
 def serialize_model(model):
@@ -143,41 +154,36 @@ def perform_inference(model, image_data, device="cpu"):
 
     return predicted.item(), probabilities[0][predicted.item()].item()
 
-def main():
-    # Set your data directories
-    train_dir = f'{DATA_DIR}/train'
-    val_dir = f'{DATA_DIR}/test'
+#def main():
 
-    # Create data loaders
-    train_loader, val_loader = create_dataloaders(train_dir, val_dir, TARGET_IMG_SIZE, batch_size=32)
+    # model = setup_model()
+    # train_loader, val_loader = setup_loaders()
 
-    # Create the model
-    model = create_model(NUM_CLASSES)
+    # logger.info("Ready to start model training...")
 
-    # Train the model
-    trained_model = train_model(model, train_loader, val_loader, epochs=1, device="cpu")
 
-    # Serialize the model
-    model_bytes = serialize_model(trained_model)
-    logger.info(f"Serialized model size: {len(model_bytes)} bytes")
+    # # Train the model
+    # trained_model = train_model(model, train_loader, val_loader, epochs=1, device="cpu")
 
-    # Deserialize the model
-    deserialized_model = deserialize_model(create_model(NUM_CLASSES), model_bytes, device="cpu")
-    logger.info(f"Deserialized the model.")
+    # # Serialize the model
+    # model_bytes = serialize_model(trained_model)
+    # logger.info(f"Serialized model size: {len(model_bytes)} bytes")
 
-    # Example Inference
-    with open(f"{DATA_DIR}/test/foxy/test.jpg", 'rb') as f:
-        image_data = f.read()
+    # # Deserialize the model
+    # deserialized_model = deserialize_model(create_model(NUM_CLASSES), model_bytes, device="cpu")
+    # logger.info(f"Deserialized the model.")
 
+    # # Example Inference
+    # with open(f"{DATA_DIR}/test/foxy/test.jpg", 'rb') as f:
+    #     image_data = f.read()
+
+    # # predicted_class, confidence = perform_inference(deserialized_model, image_data, device="cpu")
     # predicted_class, confidence = perform_inference(deserialized_model, image_data, device="cpu")
-    predicted_class, confidence = perform_inference(deserialized_model, image_data, device="cpu")
-    logger.info(f"DESERIALIZED MODEL Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
+    # logger.info(f"DESERIALIZED MODEL Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
 
-    predicted_class, confidence = perform_inference(model, image_data, device="cpu")
-    logger.info(f"Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
+    # predicted_class, confidence = perform_inference(model, image_data, device="cpu")
+    # logger.info(f"Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
 
-    logger.info("Model serialization, deserialization, and inference test completed.")
-
-if __name__ == '__main__':
-    main()
+    # logger.info("Model serialization, deserialization, and inference test completed.")
+# if __name__ == "__main__":
     

@@ -6,3 +6,4 @@ go-orchestrator.log
 data/
 /python-ml-service/proto/__pycache__/
 .gitignore
+*.pyc
