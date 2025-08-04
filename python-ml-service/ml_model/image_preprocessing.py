@@ -1,6 +1,5 @@
 import os
 from PIL import Image
-import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
@@ -19,7 +18,7 @@ class PetDataset(Dataset):
         """
         self.root_dir = root_dir
         self.transform = transform
-        self.classes = os.listdir(root_dir)  # e.g., ['foxy', 'puppy']
+        self.classes = os.listdir(root_dir)  # setting number of class based on directories present in root_dir
         self.image_paths = []
         self.labels = []
 
@@ -30,12 +29,14 @@ class PetDataset(Dataset):
                 self.image_paths.append(img_path)
                 self.labels.append(idx)  # Assign numerical labels based on folder order
 
-        self.class_to_idx = {class_name: i for i, class_name in enumerate(self.classes)}
+        self.class_to_idx = {class_name: i for i, class_name in enumerate(self.classes)} # create mapping of class to label
 
     def __len__(self):
+        # Return the total number of samples in the dataset
         return len(self.image_paths)
 
     def __getitem__(self, idx):
+        # Load and preprocess an image given its index
         img_path = self.image_paths[idx]
         image = Image.open(img_path).convert('RGB')  # Ensure all images are RGB
         label = self.labels[idx]

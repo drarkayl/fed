@@ -1,3 +1,4 @@
+from PIL import Image
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,11 +7,12 @@ import os
 import logging
 import io
 
-from image_preprocessing import PetDataset, get_data_transforms
+from .image_preprocessing import PetDataset, get_data_transforms
 
 # Constants
 TARGET_IMG_SIZE = (1024, 1360)
 NUM_CLASSES = 2  # foxy and puppy
+DATA_DIR = 'ml_model/data'  # Directory where the data is stored
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ def create_dataloaders(train_dir, val_dir, img_size, batch_size):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
+    logger.info(f"The classes are: {train_dataset.class_to_idx}")
     return train_loader, val_loader
 
 
@@ -67,6 +70,7 @@ def train_model(model, train_loader, val_loader, epochs, device="cpu"):
     model.to(device)  # Move model to the specified device
 
     for epoch in range(epochs):
+        # --- Training Phase ---
         model.train()  # Set model to training mode
         running_loss = 0.0
         for inputs, labels in train_loader:
@@ -80,7 +84,24 @@ def train_model(model, train_loader, val_loader, epochs, device="cpu"):
             running_loss += loss.item() * inputs.size(0)
 
         epoch_loss = running_loss / len(train_loader.dataset)
-        logger.info(f'Epoch {epoch + 1}/{epochs} Loss: {epoch_loss:.4f}')
+
+        # --- Validation Phase ---
+        model.eval()  # Set model to evaluation mode
+        val_loss = 0.0
+        corrects = 0
+        with torch.no_grad():  # Disable gradient calculation
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item() * inputs.size(0)
+
+                _, preds = torch.max(outputs, 1)
+                corrects += torch.sum(preds == labels.data)
+
+        epoch_val_loss = val_loss / len(val_loader.dataset)
+        epoch_val_acc = corrects.double() / len(val_loader.dataset)
+        logger.info(f'Epoch {epoch + 1}/{epochs} Train Loss: {epoch_loss:.4f} Val Loss: {epoch_val_loss:.4f} Val Acc: {epoch_val_acc:.4f}')
 
     return model
 
@@ -111,6 +132,8 @@ def perform_inference(model, image_data, device="cpu"):
     model.to(device)
     img = Image.open(io.BytesIO(image_data)).convert('RGB')
     transform = get_data_transforms(TARGET_IMG_SIZE)['validation']
+    # single image with shape [C, H, W] becomes a mini-batch of one with shape [1, C, H, W], 
+    # which is the format the model's forward pass expects.
     img_tensor = transform(img).unsqueeze(0).to(device)  # Add batch dimension and move to device
 
     with torch.no_grad():  # Disable gradient calculation
@@ -120,12 +143,10 @@ def perform_inference(model, image_data, device="cpu"):
 
     return predicted.item(), probabilities[0][predicted.item()].item()
 
-
-if __name__ == '__main__':
-    # Example Usage (can be removed or commented out later)
+def main():
     # Set your data directories
-    train_dir = 'data/train'
-    val_dir = 'data/test'
+    train_dir = f'{DATA_DIR}/train'
+    val_dir = f'{DATA_DIR}/test'
 
     # Create data loaders
     train_loader, val_loader = create_dataloaders(train_dir, val_dir, TARGET_IMG_SIZE, batch_size=32)
@@ -142,13 +163,21 @@ if __name__ == '__main__':
 
     # Deserialize the model
     deserialized_model = deserialize_model(create_model(NUM_CLASSES), model_bytes, device="cpu")
+    logger.info(f"Deserialized the model.")
 
     # Example Inference
-    # Assuming you have an image file 'sample_image.jpg' in the same directory
-    with open("data/test/foxy/depositphotos_24988471-stock-illustration-cartoon-fox.jpg", 'rb') as f:
+    with open(f"{DATA_DIR}/test/foxy/test.jpg", 'rb') as f:
         image_data = f.read()
 
+    # predicted_class, confidence = perform_inference(deserialized_model, image_data, device="cpu")
     predicted_class, confidence = perform_inference(deserialized_model, image_data, device="cpu")
+    logger.info(f"DESERIALIZED MODEL Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
+
+    predicted_class, confidence = perform_inference(model, image_data, device="cpu")
     logger.info(f"Predicted Class: {predicted_class}, Confidence: {confidence:.4f}")
 
     logger.info("Model serialization, deserialization, and inference test completed.")
+
+if __name__ == '__main__':
+    main()
+    

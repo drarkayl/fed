@@ -8,6 +8,9 @@ from concurrent import futures
 import proto.federated_learning_pb2 as pb2
 import proto.federated_learning_pb2_grpc as pb2_grpc
 
+import ml_model.ml_model_cnn as ml_model
+
+
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,8 @@ class MLService(pb2_grpc.MLServiceServicer):
         # Dummy implementation:
         weights = pb2.ModelWeights(serialized_weights=b'', client_id='dummy', round_id=request.round_id)
         response = pb2.TrainResponse(weights=weights, loss=0.0, accuracy=0.0, confirmation=pb2.AckResponse(success=True))
+
+        ml_model.main()
         return response
 
     def GetModelWeights(self, request, context):
