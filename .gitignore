@@ -1,6 +1,7 @@
 /python-ml-service/venv/
-
 /python-ml-service/__pycache__/
 python-ml-service.log
 go-orchestrator.log
 .venv/
+data/
+.gitignore
