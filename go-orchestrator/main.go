@@ -1,106 +1,63 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
-	"time"
+	"os/signal"
+	"strconv"
+	"syscall"
 
-	pb "github.com/drarkayl/fed/proto/proto"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/emptypb"
-)
-
-const (
-	mlServiceAddress = "localhost:50051"
 )
 
 func main() {
-	// --- Structured Logging Setup ---
-	// Configure logrus to output in JSON format.
-	logrus.SetFormatter(&logrus.JSONFormatter{})
+	setupLogger()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// Configure logrus to write to a file.
-	file, err := os.OpenFile("go-orchestrator.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err == nil {
-		logrus.SetOutput(file)
+	port := p2pPort
+	if len(os.Args) > 1 {
+		logrus.Infof("Starting orchestrator with port: %v", os.Args[1])
+		var err error
+		port, err = strconv.Atoi(os.Args[1])
+		if err != nil {
+			logrus.Fatalf("Invalid port: %v", err)
+		}
 	} else {
-		logrus.Info("Failed to log to file, using default stderr")
+		logrus.Infof("Starting orchestrator with default port %v", p2pPort)
 	}
-	defer file.Close()
+	logrus.AddHook(&customHook{nodeName: fmt.Sprint(port)}) // Add the hook
 
-	logrus.Info("Go Orchestrator client starting...")
+	logrus.Info("Go Orchestrator starting...")
 
-	// Set up a connection to the server.
-	// Using WithTransportCredentials and insecure.NewCredentials() is the modern way to create an insecure connection.
-	conn, err := grpc.NewClient(mlServiceAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Fatal("Failed to connect to gRPC server")
-	}
-	defer conn.Close()
-	c := pb.NewMLServiceClient(conn)
+	// Create a peer store
+	peerStore := NewPeerStore()
+	// Start the P2P server in a goroutine
+	go StartP2PServer(peerStore, "go-orchestrator", port, quit)
+	// Start discovering peers in a goroutine
+	go DiscoverPeers(peerStore, "_p2p._tcp", quit)
 
-	// Create a context with a timeout to prevent calls from hanging indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
+	// // Create a new ML client
+	// mlClient, err := NewMLClient()
+	// if err != nil {
+	// 	logrus.Fatalf("Failed to create ML client: %v", err)
+	// }
+	// defer mlClient.Close()
 
-	// 1. Call TrainLocalModel
-	logrus.Info("--- Calling TrainLocalModel ---")
-	trainReq := &pb.TrainRequest{
-		Epochs:    1,
-		BatchSize: 32,
-		RoundId:   1,
-	}
-	trainRes, err := c.TrainLocalModel(ctx, trainReq)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Fatal("Could not train model")
-	}
-	logrus.WithFields(logrus.Fields{
-		"success":  trainRes.GetConfirmation().GetSuccess(),
-		"clientID": trainRes.GetWeights().GetClientId(),
-	}).Info("TrainLocalModel Response")
+	// // Create a context with a timeout
+	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	// defer cancel()
 
-	// 2. Call GetModelWeights
-	logrus.Info("--- Calling GetModelWeights ---")
-	weights, err := c.GetModelWeights(ctx, &emptypb.Empty{})
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Fatal("Could not get model weights")
-	}
-	logrus.WithFields(logrus.Fields{
-		"clientID": weights.GetClientId(),
-		"roundID":  weights.GetRoundId(),
-	}).Info("GetModelWeights Response")
+	// // Perform ML operations
+	// mlClient.TrainLocalModel(ctx)
+	// mlClient.GetModelWeights(ctx)
+	// mlClient.SetModelWeights(ctx)
+	// mlClient.PerformInference(ctx)
 
-	// 3. Call SetModelWeights
-	logrus.Info("--- Calling SetModelWeights ---")
-	setWeightsReq := &pb.SetGlobalWeightsRequest{
-		GlobalWeights: &pb.ModelWeights{
-			SerializedWeights: []byte("dummy-global-weights-from-go"),
-			ClientId:          "go-orchestrator-client",
-			RoundId:           1,
-		},
-	}
-	setWeightsRes, err := c.SetModelWeights(ctx, setWeightsReq)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Fatal("Could not set model weights")
-	}
-	logrus.WithFields(logrus.Fields{
-		"success": setWeightsRes.GetSuccess(),
-		"message": setWeightsRes.GetMessage(),
-	}).Info("SetModelWeights Response")
+	logrus.Info("Orchestrator running. Press Ctrl+C to exit.")
 
-	// 4. Call PerformInference
-	logrus.Info("--- Calling PerformInference ---")
-	inferenceReq := &pb.ImageData{
-		Data: []byte("dummy-image-data-from-go"),
-	}
-	inferenceRes, err := c.PerformInference(ctx, inferenceReq)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"error": err}).Fatal("Could not perform inference")
-	}
-	logrus.WithFields(logrus.Fields{
-		"label":      inferenceRes.GetLabel(),
-		"confidence": inferenceRes.GetConfidence(),
-	}).Info("PerformInference Response")
+	// Wait for a signal to exit
+	<-quit
+
+	logrus.Info("Shutting down orchestrator...")
 }
